@@ -1,4 +1,6 @@
-import { ASPECTS, type Look, type Transform } from "../types";
+import { BACKGROUNDS, type Look, type Transform } from "../types";
+
+const imageCache = new Map<string, HTMLImageElement>();
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -8,14 +10,57 @@ function roundRect(
   h: number,
   r: number,
 ): void {
-  const radius = Math.min(r, w / 2, h / 2);
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
+  if (radius <= 0) {
+    ctx.rect(x, y, w, h);
+  } else {
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+  }
   ctx.closePath();
+}
+
+export function outputSize(
+  look: Look,
+  video?: HTMLVideoElement | null,
+): { w: number; h: number } {
+  const long =
+    look.quality === "2160" ? 3840 : look.quality === "1440" ? 2560 : 1920;
+  const short =
+    look.quality === "2160" ? 2160 : look.quality === "1440" ? 1440 : 1080;
+
+  if (look.aspect === "source" && video?.videoWidth && video.videoHeight) {
+    const r = video.videoWidth / video.videoHeight;
+    if (r >= 1) return { w: long, h: Math.round(long / r) };
+    return { w: Math.round(short * r), h: short };
+  }
+  if (look.aspect === "9:16") return { w: short, h: long };
+  if (look.aspect === "1:1") return { w: short, h: short };
+  return { w: long, h: short };
+}
+
+export function videoBox(
+  video: HTMLVideoElement,
+  look: Look,
+  w: number,
+  h: number,
+): { dx: number; dy: number; dw: number; dh: number } {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const pad = Math.max(0, look.padding);
+  const maxW = Math.max(1, w - pad * 2);
+  const maxH = Math.max(1, h - pad * 2);
+  const scale =
+    look.fit === "cover"
+      ? Math.max(maxW / vw, maxH / vh)
+      : Math.min(maxW / vw, maxH / vh);
+  const dw = vw * scale;
+  const dh = vh * scale;
+  return { dx: (w - dw) / 2, dy: (h - dh) / 2, dw, dh };
 }
 
 function paintBackground(
@@ -24,31 +69,38 @@ function paintBackground(
   width: number,
   height: number,
 ): void {
-  const css = look.background;
-  if (css.startsWith("linear-gradient")) {
-    const g = ctx.createLinearGradient(0, 0, width * 0.3, height);
-    if (css.includes("#2a120c")) {
-      g.addColorStop(0, "#2a120c");
-      g.addColorStop(0.45, "#5a2314");
-      g.addColorStop(1, "#c45a2a");
-    } else if (css.includes("#0c1a22")) {
-      g.addColorStop(0, "#0c1a22");
-      g.addColorStop(0.5, "#163445");
-      g.addColorStop(1, "#2d6a6a");
-    } else {
-      g.addColorStop(0, "#16101f");
-      g.addColorStop(0.55, "#3a2458");
-      g.addColorStop(1, "#8a4b6e");
+  if (look.bgImage) {
+    let img = imageCache.get(look.bgImage);
+    if (!img) {
+      img = new Image();
+      img.src = look.bgImage;
+      imageCache.set(look.bgImage, img);
     }
-    ctx.fillStyle = g;
+    if (img.complete && img.naturalWidth) {
+      const s = Math.max(width / img.naturalWidth, height / img.naturalHeight);
+      const iw = img.naturalWidth * s;
+      const ih = img.naturalHeight * s;
+      ctx.drawImage(img, (width - iw) / 2, (height - ih) / 2, iw, ih);
+      return;
+    }
+  }
+
+  const preset = BACKGROUNDS.find((b) => b.id === look.backgroundId);
+  const colors =
+    look.backgroundId === "custom"
+      ? [look.customColor]
+      : (preset?.colors ?? [look.customColor]);
+
+  if (colors.length === 1) {
+    ctx.fillStyle = colors[0] ?? "#111110";
   } else {
-    ctx.fillStyle = css;
+    const g = ctx.createLinearGradient(0, 0, width * 0.2, height);
+    colors.forEach((c, i) => {
+      g.addColorStop(i / Math.max(1, colors.length - 1), c);
+    });
+    ctx.fillStyle = g;
   }
   ctx.fillRect(0, 0, width, height);
-}
-
-export function outputSize(look: Look): { w: number; h: number } {
-  return ASPECTS[look.aspect];
 }
 
 export function renderFrame(
@@ -57,7 +109,9 @@ export function renderFrame(
   xf: Transform,
   look: Look,
 ): void {
-  const { w, h } = outputSize(look);
+  const { w, h } = outputSize(look, video);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.clearRect(0, 0, w, h);
   paintBackground(ctx, look, w, h);
 
@@ -65,27 +119,25 @@ export function renderFrame(
   const vh = video.videoHeight;
   if (!vw || !vh) return;
 
-  const pad = look.padding;
-  const maxW = w - pad * 2;
-  const maxH = h - pad * 2;
-  const fit = Math.min(maxW / vw, maxH / vh);
-  const dw = vw * fit;
-  const dh = vh * fit;
-  const dx = (w - dw) / 2;
-  const dy = (h - dh) / 2;
+  const { dx, dy, dw, dh } = videoBox(video, look, w, h);
+  const flush = look.padding <= 0 && look.radius <= 0 && look.border <= 0;
+
+  if (look.shadow && !flush) {
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.45)";
+    ctx.shadowBlur = 48;
+    ctx.shadowOffsetY = 18;
+    ctx.fillStyle = "#000";
+    roundRect(ctx, dx, dy, dw, dh, look.radius);
+    ctx.fill();
+    ctx.restore();
+  }
 
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.45)";
-  ctx.shadowBlur = 48;
-  ctx.shadowOffsetY = 18;
-  ctx.fillStyle = "#000";
-  roundRect(ctx, dx, dy, dw, dh, look.radius);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  roundRect(ctx, dx, dy, dw, dh, look.radius);
-  ctx.clip();
+  if (!flush) {
+    roundRect(ctx, dx, dy, dw, dh, look.radius);
+    ctx.clip();
+  }
 
   const fx = dx + xf.x * dw;
   const fy = dy + xf.y * dh;
@@ -94,9 +146,17 @@ export function renderFrame(
   ctx.translate(-fx, -fy);
   ctx.drawImage(video, dx, dy, dw, dh);
   ctx.restore();
+
+  if (look.border > 0 && !flush) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = look.border;
+    roundRect(ctx, dx, dy, dw, dh, look.radius);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
-/** Map a click on the preview canvas to video-normalized 0–1 coords. */
 export function canvasToVideo(
   clickX: number,
   clickY: number,
@@ -104,25 +164,12 @@ export function canvasToVideo(
   video: HTMLVideoElement,
   look: Look,
 ): { x: number; y: number } | null {
-  const { w, h } = outputSize(look);
+  const { w, h } = outputSize(look, video);
   const rect = canvas.getBoundingClientRect();
   const x = ((clickX - rect.left) / rect.width) * w;
   const y = ((clickY - rect.top) / rect.height) * h;
-
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  if (!vw || !vh) return null;
-  const pad = look.padding;
-  const maxW = w - pad * 2;
-  const maxH = h - pad * 2;
-  const fit = Math.min(maxW / vw, maxH / vh);
-  const dw = vw * fit;
-  const dh = vh * fit;
-  const dx = (w - dw) / 2;
-  const dy = (h - dh) / 2;
+  if (!video.videoWidth) return null;
+  const { dx, dy, dw, dh } = videoBox(video, look, w, h);
   if (x < dx || y < dy || x > dx + dw || y > dy + dh) return null;
-  return {
-    x: (x - dx) / dw,
-    y: (y - dy) / dh,
-  };
+  return { x: (x - dx) / dw, y: (y - dy) / dh };
 }

@@ -1,14 +1,12 @@
 import type { Transform, Zoom } from "../types";
 
-const EASE = 0.38;
-
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
-function smoothstep(t: number): number {
+function smootherstep(t: number): number {
   const x = clamp(t, 0, 1);
-  return x * x * (3 - 2 * x);
+  return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -16,7 +14,7 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 function lerpXf(a: Transform, b: Transform, t: number): Transform {
-  const e = smoothstep(t);
+  const e = smootherstep(t);
   return {
     x: lerp(a.x, b.x, e),
     y: lerp(a.y, b.y, e),
@@ -26,11 +24,14 @@ function lerpXf(a: Transform, b: Transform, t: number): Transform {
 
 const IDENTITY: Transform = { x: 0.5, y: 0.5, scale: 1 };
 
-function windowOf(z: Zoom): { start: number; holdEnd: number; end: number } {
+function windowOf(
+  z: Zoom,
+  ease: number,
+): { start: number; holdEnd: number; end: number } {
   return {
-    start: z.t - EASE,
+    start: z.t - ease,
     holdEnd: z.t + z.hold,
-    end: z.t + z.hold + EASE,
+    end: z.t + z.hold + ease,
   };
 }
 
@@ -43,13 +44,14 @@ export function sampleTransform(
   t: number,
   zooms: Zoom[],
   duration: number,
+  ease = 0.45,
 ): Transform {
   if (zooms.length === 0 || duration <= 0) return IDENTITY;
 
   const sorted = zooms.slice().sort((a, b) => a.t - b.t);
   const active: { z: Zoom; start: number; holdEnd: number; end: number }[] = [];
   for (const z of sorted) {
-    const w = windowOf(z);
+    const w = windowOf(z, ease);
     if (t >= w.start && t <= w.end) active.push({ z, ...w });
   }
 

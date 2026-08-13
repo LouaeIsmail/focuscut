@@ -5,3 +5,6 @@ dist
 .env
 .env.*
 sample.mp4
+*.webm
+*.mp4
+!public/**

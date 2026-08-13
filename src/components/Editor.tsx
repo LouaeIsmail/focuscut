@@ -4,14 +4,18 @@ import { exportVideo } from "../lib/exportVideo";
 import { sampleTransform, uid } from "../lib/transform";
 import {
   BACKGROUNDS,
+  DEFAULT_LOOK,
   type Aspect,
+  type FitMode,
   type Look,
+  type Quality,
   type Zoom,
 } from "../types";
 
 type Props = {
   src: string;
   onReset: () => void;
+  seedZooms?: Zoom[];
 };
 
 function fmt(t: number): string {
@@ -21,24 +25,28 @@ function fmt(t: number): string {
   return `${m}:${r.toFixed(1).padStart(4, "0")}`;
 }
 
-export function Editor({ src, onReset }: Props) {
+export function Editor({ src, onReset, seedZooms = [] }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgInput = useRef<HTMLInputElement>(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [now, setNow] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [zooms, setZooms] = useState<Zoom[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const [zooms, setZooms] = useState<Zoom[]>(seedZooms);
+  const [selected, setSelected] = useState<string | null>(
+    seedZooms[0]?.id ?? null,
+  );
   const [exporting, setExporting] = useState<number | null>(null);
-  const [look, setLook] = useState<Look>({
-    aspect: "16:9",
-    padding: 96,
-    radius: 18,
-    background: BACKGROUNDS[0]?.css ?? "#111110",
-  });
+  const [speed, setSpeed] = useState(1);
+  const [look, setLook] = useState<Look>(DEFAULT_LOOK);
 
-  const size = useMemo(() => outputSize(look), [look]);
+  const size = useMemo(
+    () => outputSize(look, videoRef.current),
+    [look, ready, duration],
+  );
 
   useEffect(() => {
     const video = videoRef.current;
@@ -46,14 +54,23 @@ export function Editor({ src, onReset }: Props) {
     if (!video || !canvas) return;
     canvas.width = size.w;
     canvas.height = size.h;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
     if (!ctx) return;
 
     let raf = 0;
     let lastUi = 0;
     const draw = (ts: number) => {
+      if (trimEnd > trimStart && !video.paused && video.currentTime >= trimEnd) {
+        video.pause();
+        video.currentTime = trimEnd;
+      }
       const t = video.currentTime;
-      const xf = sampleTransform(t, zooms, video.duration || duration);
+      const xf = sampleTransform(
+        t,
+        zooms,
+        video.duration || duration,
+        look.ease,
+      );
       renderFrame(ctx, video, xf, look);
       if (ts - lastUi > 80) {
         lastUi = ts;
@@ -64,48 +81,47 @@ export function Editor({ src, onReset }: Props) {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [look, zooms, duration, size.w, size.h]);
+  }, [look, zooms, duration, size.w, size.h, trimStart, trimEnd]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const video = videoRef.current;
       if (!video) return;
-      if (e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement)
+        return;
       if (e.code === "Space") {
         e.preventDefault();
-        if (video.paused) void video.play();
-        else video.pause();
+        if (video.paused) {
+          if (video.currentTime >= trimEnd - 0.05) video.currentTime = trimStart;
+          void video.play();
+        } else video.pause();
       }
-      if (e.key === "z" || e.key === "Z") {
-        addZoom(0.5, 0.5);
-      }
-      if (e.key === "Backspace" || e.key === "Delete") {
-        if (selected) {
-          setZooms((zs) => zs.filter((z) => z.id !== selected));
-          setSelected(null);
-        }
+      if (e.key === "z" || e.key === "Z") addZoom(0.5, 0.5);
+      if ((e.key === "Backspace" || e.key === "Delete") && selected) {
+        setZooms((zs) => zs.filter((z) => z.id !== selected));
+        setSelected(null);
       }
       if (e.key === "ArrowLeft") {
-        video.currentTime = Math.max(0, video.currentTime - 1);
+        video.currentTime = Math.max(trimStart, video.currentTime - 1);
       }
       if (e.key === "ArrowRight") {
-        video.currentTime = Math.min(duration, video.currentTime + 1);
+        video.currentTime = Math.min(trimEnd || duration, video.currentTime + 1);
       }
+      if (e.key === "[") setTrimStart(video.currentTime);
+      if (e.key === "]") setTrimEnd(video.currentTime);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, duration, zooms]);
+  }, [selected, duration, trimStart, trimEnd]);
 
-  function addZoom(x: number, y: number) {
-    const video = videoRef.current;
-    const t = video?.currentTime ?? 0;
+  function addZoom(x: number, y: number, t = videoRef.current?.currentTime ?? 0) {
     const next: Zoom = {
       id: uid(),
       t,
       x,
       y,
       scale: 1.85,
-      hold: 0.7,
+      hold: 0.55,
     };
     setZooms((zs) => [...zs, next].sort((a, b) => a.t - b.t));
     setSelected(next.id);
@@ -124,11 +140,14 @@ export function Editor({ src, onReset }: Props) {
     const video = videoRef.current;
     if (!video) return;
     setExporting(0);
+    const end = trimEnd || video.duration || 0;
     try {
       const blob = await exportVideo({
         video,
         zooms,
         look,
+        trimStart,
+        trimEnd: end,
         onProgress: (p) => setExporting(p),
       });
       const a = document.createElement("a");
@@ -174,11 +193,15 @@ export function Editor({ src, onReset }: Props) {
             pointerEvents: "none",
           }}
           onLoadedMetadata={(e) => {
-            setDuration(e.currentTarget.duration || 0);
+            const d = e.currentTarget.duration || 0;
+            setDuration(d);
+            setTrimEnd(d);
           }}
           onLoadedData={(e) => {
             const v = e.currentTarget;
-            setDuration(v.duration || 0);
+            const d = v.duration || 0;
+            setDuration(d);
+            if (!trimEnd) setTrimEnd(d);
             setReady(true);
             if (v.currentTime === 0) v.currentTime = 0.04;
           }}
@@ -191,7 +214,7 @@ export function Editor({ src, onReset }: Props) {
       </div>
 
       <aside className="side">
-        <h2>Look</h2>
+        <h2>Frame</h2>
         <div className="field">
           <label htmlFor="aspect">Aspect</label>
           <select
@@ -204,6 +227,34 @@ export function Editor({ src, onReset }: Props) {
             <option value="16:9">16:9</option>
             <option value="9:16">9:16</option>
             <option value="1:1">1:1</option>
+            <option value="source">Source</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="fit">Fit</label>
+          <select
+            id="fit"
+            value={look.fit}
+            onChange={(e) =>
+              setLook((l) => ({ ...l, fit: e.target.value as FitMode }))
+            }
+          >
+            <option value="contain">Contain</option>
+            <option value="cover">Cover (fill)</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="quality">Export quality</label>
+          <select
+            id="quality"
+            value={look.quality}
+            onChange={(e) =>
+              setLook((l) => ({ ...l, quality: e.target.value as Quality }))
+            }
+          >
+            <option value="1080">1080p 60fps</option>
+            <option value="1440">1440p 60fps</option>
+            <option value="2160">4K 30fps</option>
           </select>
         </div>
         <div className="field">
@@ -214,21 +265,69 @@ export function Editor({ src, onReset }: Props) {
                 key={b.id}
                 type="button"
                 className="swatch"
-                data-on={look.background === b.css}
+                data-on={look.backgroundId === b.id && !look.bgImage}
                 title={b.label}
-                style={{ background: b.css }}
-                onClick={() => setLook((l) => ({ ...l, background: b.css }))}
+                style={{
+                  background:
+                    b.colors.length === 1
+                      ? b.colors[0]
+                      : `linear-gradient(160deg, ${b.colors.join(",")})`,
+                }}
+                onClick={() =>
+                  setLook((l) => ({
+                    ...l,
+                    backgroundId: b.id,
+                    bgImage: null,
+                  }))
+                }
               />
             ))}
           </div>
+        </div>
+        <div className="field">
+          <label htmlFor="custom-bg">Custom color</label>
+          <input
+            id="custom-bg"
+            type="color"
+            value={look.customColor}
+            onChange={(e) =>
+              setLook((l) => ({
+                ...l,
+                backgroundId: "custom",
+                customColor: e.target.value,
+                bgImage: null,
+              }))
+            }
+          />
+        </div>
+        <div className="field">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => bgInput.current?.click()}
+          >
+            Background image
+          </button>
+          <input
+            ref={bgInput}
+            className="hidden-input"
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const url = URL.createObjectURL(file);
+              setLook((l) => ({ ...l, bgImage: url }));
+            }}
+          />
         </div>
         <div className="field">
           <label htmlFor="pad">Padding {look.padding}px</label>
           <input
             id="pad"
             type="range"
-            min={24}
-            max={180}
+            min={0}
+            max={220}
             value={look.padding}
             onChange={(e) =>
               setLook((l) => ({ ...l, padding: Number(e.target.value) }))
@@ -241,15 +340,79 @@ export function Editor({ src, onReset }: Props) {
             id="rad"
             type="range"
             min={0}
-            max={40}
+            max={48}
             value={look.radius}
             onChange={(e) =>
               setLook((l) => ({ ...l, radius: Number(e.target.value) }))
             }
           />
         </div>
+        <div className="field">
+          <label htmlFor="border">Border {look.border}px</label>
+          <input
+            id="border"
+            type="range"
+            min={0}
+            max={16}
+            value={look.border}
+            onChange={(e) =>
+              setLook((l) => ({ ...l, border: Number(e.target.value) }))
+            }
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="ease">Zoom ease {look.ease.toFixed(2)}s</label>
+          <input
+            id="ease"
+            type="range"
+            min={0.12}
+            max={1.2}
+            step={0.02}
+            value={look.ease}
+            onChange={(e) =>
+              setLook((l) => ({ ...l, ease: Number(e.target.value) }))
+            }
+          />
+        </div>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={look.shadow}
+            onChange={(e) =>
+              setLook((l) => ({ ...l, shadow: e.target.checked }))
+            }
+          />
+          Drop shadow
+        </label>
 
-        <h2>Zoom</h2>
+        <h2>Trim</h2>
+        <div className="field">
+          <label htmlFor="in">In {fmt(trimStart)}</label>
+          <input
+            id="in"
+            type="range"
+            min={0}
+            max={duration || 0}
+            step={0.01}
+            value={trimStart}
+            onChange={(e) => setTrimStart(Math.min(Number(e.target.value), trimEnd - 0.05))}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="out">Out {fmt(trimEnd)}</label>
+          <input
+            id="out"
+            type="range"
+            min={0}
+            max={duration || 0}
+            step={0.01}
+            value={trimEnd}
+            onChange={(e) => setTrimEnd(Math.max(Number(e.target.value), trimStart + 0.05))}
+          />
+        </div>
+        <p className="hint">[ sets in · ] sets out at the playhead</p>
+
+        <h2>Zoom {zooms.length ? `(${zooms.length})` : ""}</h2>
         {current ? (
           <>
             <div className="field">
@@ -258,7 +421,7 @@ export function Editor({ src, onReset }: Props) {
                 id="scale"
                 type="range"
                 min={1.1}
-                max={3}
+                max={3.5}
                 step={0.05}
                 value={current.scale}
                 onChange={(e) => {
@@ -275,7 +438,7 @@ export function Editor({ src, onReset }: Props) {
                 id="hold"
                 type="range"
                 min={0.1}
-                max={3}
+                max={4}
                 step={0.1}
                 value={current.hold}
                 onChange={(e) => {
@@ -299,8 +462,8 @@ export function Editor({ src, onReset }: Props) {
           </>
         ) : (
           <p className="hint">
-            Click the video to aim a zoom at the playhead. Z adds one in the
-            center.
+            Click the video to aim a zoom. Z adds one in the center. Auto zooms
+            from clicks need the helper extension.
           </p>
         )}
       </aside>
@@ -313,8 +476,10 @@ export function Editor({ src, onReset }: Props) {
             onClick={() => {
               const v = videoRef.current;
               if (!v) return;
-              if (v.paused) void v.play();
-              else v.pause();
+              if (v.paused) {
+                if (v.currentTime >= trimEnd - 0.05) v.currentTime = trimStart;
+                void v.play();
+              } else v.pause();
             }}
           >
             {playing ? "Pause" : "Play"}
@@ -323,8 +488,38 @@ export function Editor({ src, onReset }: Props) {
             {fmt(now)} / {fmt(duration)}
           </span>
           <span>{ready ? `${zooms.length} zooms` : "Loading…"}</span>
+          <label className="speed">
+            Speed
+            <select
+              value={speed}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                setSpeed(n);
+                if (videoRef.current) videoRef.current.playbackRate = n;
+              }}
+            >
+              <option value={0.5}>0.5×</option>
+              <option value={1}>1×</option>
+              <option value={1.5}>1.5×</option>
+              <option value={2}>2×</option>
+            </select>
+          </label>
         </div>
         <div className="rail">
+          <div
+            className="trim-shade"
+            style={{
+              left: 0,
+              width: duration ? `${(trimStart / duration) * 100}%` : 0,
+            }}
+          />
+          <div
+            className="trim-shade"
+            style={{
+              left: duration ? `${(trimEnd / duration) * 100}%` : "100%",
+              right: 0,
+            }}
+          />
           <div
             className="playhead"
             style={{ left: duration ? `${(now / duration) * 100}%` : 0 }}

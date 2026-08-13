@@ -5,6 +5,25 @@
   "type": "module",
   "description": "Open-source screen recordings with zooms that follow the action. Runs in the browser. Nothing uploads.",
   "license": "MIT",
+  "homepage": "https://louaeismail.github.io/focuscut",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LouaeIsmail/focuscut.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LouaeIsmail/focuscut/issues"
+  },
+  "keywords": [
+    "screen-recorder",
+    "screen-studio",
+    "cursorful",
+    "loom",
+    "video-editor",
+    "demo",
+    "zoom",
+    "browser",
+    "open-source"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

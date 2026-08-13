@@ -2,21 +2,52 @@ import { renderFrame, outputSize } from "./draw";
 import { sampleTransform } from "./transform";
 import type { Look, Zoom } from "../types";
 
+function exportMime(): string {
+  const types = [
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=h264",
+    "video/webm",
+  ];
+  return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? "video/webm";
+}
+
+function bitrate(look: Look): number {
+  if (look.quality === "2160") return 40_000_000;
+  if (look.quality === "1440") return 24_000_000;
+  return 16_000_000;
+}
+
+function fps(look: Look): number {
+  return look.quality === "2160" ? 30 : 60;
+}
+
 export async function exportVideo(opts: {
   video: HTMLVideoElement;
   zooms: Zoom[];
   look: Look;
+  trimStart: number;
+  trimEnd: number;
   onProgress?: (p: number) => void;
 }): Promise<Blob> {
   const { video, zooms, look, onProgress } = opts;
-  const { w, h } = outputSize(look);
+  const trimStart = Math.max(0, opts.trimStart);
+  const trimEnd = Math.max(trimStart + 0.05, opts.trimEnd);
+  const span = trimEnd - trimStart;
+
+  const { w, h } = outputSize(look, video);
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", {
+    alpha: false,
+    desynchronized: true,
+  });
   if (!ctx) throw new Error("No 2d context");
 
-  const canvasStream = canvas.captureStream(30);
+  const rate = fps(look);
+  const canvasStream = canvas.captureStream(rate);
+  const wasMuted = video.muted;
+  video.muted = false;
   let audioTracks: MediaStreamTrack[] = [];
   try {
     const vs = (
@@ -31,12 +62,13 @@ export async function exportVideo(opts: {
     ...audioTracks,
   ]);
 
-  const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-    ? "video/webm;codecs=vp9"
-    : "video/webm";
-
+  const mime = exportMime();
   const chunks: BlobPart[] = [];
-  const rec = new MediaRecorder(mixed, { mimeType: mime, videoBitsPerSecond: 8_000_000 });
+  const rec = new MediaRecorder(mixed, {
+    mimeType: mime,
+    videoBitsPerSecond: bitrate(look),
+    audioBitsPerSecond: 192_000,
+  });
   rec.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data);
   };
@@ -56,13 +88,12 @@ export async function exportVideo(opts: {
     rec.onstop = finish;
   });
 
-  const duration = video.duration || 0;
   video.pause();
-  video.currentTime = 0;
+  video.playbackRate = 1;
+  video.currentTime = trimStart;
   await waitSeek(video);
 
-  rec.start(200);
-  video.playbackRate = 1;
+  rec.start(250);
   await video.play();
 
   await new Promise<void>((resolve) => {
@@ -73,13 +104,14 @@ export async function exportVideo(opts: {
       resolve();
     };
     const tick = () => {
-      const xf = sampleTransform(video.currentTime, zooms, duration);
+      const t = video.currentTime;
+      const xf = sampleTransform(t, zooms, video.duration || trimEnd, look.ease);
       renderFrame(ctx, video, xf, look);
-      onProgress?.(duration ? Math.min(1, video.currentTime / duration) : 0);
+      onProgress?.(span ? Math.min(1, (t - trimStart) / span) : 0);
       const atEnd =
         video.ended ||
         video.paused ||
-        (duration > 0 && video.currentTime >= duration - 0.05);
+        t >= trimEnd - 0.04;
       if (atEnd) {
         finishPlay();
         return;
@@ -88,9 +120,10 @@ export async function exportVideo(opts: {
     };
     requestAnimationFrame(tick);
     video.onended = finishPlay;
-    window.setTimeout(finishPlay, Math.ceil(duration * 1000) + 2000);
+    window.setTimeout(finishPlay, Math.ceil(span * 1000) + 2000);
   });
 
+  video.muted = wasMuted;
   if (rec.state === "recording") {
     rec.requestData();
     rec.stop();
@@ -99,7 +132,7 @@ export async function exportVideo(opts: {
   await Promise.race([
     done,
     new Promise<void>((resolve) => {
-      window.setTimeout(resolve, 1200);
+      window.setTimeout(resolve, 1500);
     }),
   ]);
   if (!settled) {
@@ -111,10 +144,12 @@ export async function exportVideo(opts: {
 
 function waitSeek(video: HTMLVideoElement): Promise<void> {
   return new Promise((resolve) => {
-    if (video.readyState >= 2) {
+    const done = () => resolve();
+    if (Math.abs(video.currentTime) < 0.05 && video.readyState >= 2) {
       resolve();
       return;
     }
-    video.addEventListener("seeked", () => resolve(), { once: true });
+    video.addEventListener("seeked", done, { once: true });
+    window.setTimeout(done, 400);
   });
 }

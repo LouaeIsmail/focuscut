@@ -1,18 +1,19 @@
-import { useRef } from "react"
+import { useRef } from "react";
 
 type Props = {
-  onFile: (file: File) => void
-  onRecord: () => void
-  onStop: () => void
-  recording: boolean
-  elapsed: number
-  error: string | null
-}
+  onFile: (file: File) => void;
+  onRecord: () => void;
+  onStop: () => void;
+  recording: boolean;
+  elapsed: number;
+  error: string | null;
+  helper: boolean;
+};
 
 function clock(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = seconds % 60
-  return `${m}:${String(s).padStart(2, "0")}`
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export function Landing({
@@ -22,8 +23,9 @@ export function Landing({
   recording,
   elapsed,
   error,
+  helper,
 }: Props) {
-  const input = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLInputElement>(null);
 
   return (
     <div className="landing">
@@ -49,8 +51,8 @@ export function Landing({
           <div className="kicker">Open source · nothing uploads</div>
           <h1>Zooms that follow the action.</h1>
           <p>
-            Record your screen or drop a video. Click where the viewer should
-            look. Export a polished demo from your browser.
+            Record your screen or drop a video. Clicks become zooms. Export a
+            polished demo from your browser.
           </p>
           {recording ? (
             <div className="rec-panel">
@@ -69,6 +71,9 @@ export function Landing({
               <p className="hint">
                 Come back to this tab and hit End. You can also use Stop
                 sharing in the browser bar.
+                {helper
+                  ? " Clicks in other tabs will become zooms."
+                  : " Install the click helper if you want auto zooms."}
               </p>
             </div>
           ) : (
@@ -93,19 +98,26 @@ export function Landing({
                 type="file"
                 accept="video/*"
                 onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) onFile(file)
+                  const file = e.target.files?.[0];
+                  if (file) onFile(file);
                 }}
               />
             </div>
           )}
           {error ? <p className="error">{error}</p> : null}
+          {!recording ? (
+            <p className="hint helper-line">
+              {helper
+                ? "Click helper is on. Zooms will plant on your clicks."
+                : "Auto-zoom needs the helper: chrome://extensions → Load unpacked → extension/"}
+            </p>
+          ) : null}
         </div>
       </main>
       <footer className="foot">
         <span>MIT. Your file stays on this machine.</span>
-        <span>Space play · Z add zoom · click video to aim</span>
+        <span>Space play · Z zoom · [ ] trim</span>
       </footer>
     </div>
-  )
+  );
 }

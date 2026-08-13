@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Focuscut clicks",
+  "version": "0.1.0",
+  "description": "Sends click positions to Focuscut so zooms plant themselves while you record.",
+  "permissions": ["tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}

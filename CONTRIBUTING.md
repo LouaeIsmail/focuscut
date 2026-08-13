@@ -8,17 +8,18 @@ npm test
 npm run dev
 ```
 
+Keep processing in the browser. Do not add an upload server or analytics.
+
 ## Useful first PRs
 
-- Chrome extension that records clicks and plants zooms automatically
+- Smoother zoom curves
 - MP4 export via ffmpeg.wasm
-- Webcam / microphone overlay
-- Project save / load (JSON + file)
-- Better easing curves
-
-Keep processing in the browser. Do not add an upload server.
+- Webcam overlay
+- Project save / load
+- Better click mapping when the user records a single window (not the whole screen)
 
 ## PR checklist
 
 - [ ] `npm test` and `npm run typecheck` pass
-- [ ] The editor still works with no video uploaded (landing) and with a short clip
+- [ ] No personal paths, screenshots, or credentials
+- [ ] Landing still works with no video loaded

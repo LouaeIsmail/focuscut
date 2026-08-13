@@ -1,87 +1,130 @@
+import type { Click } from "../types";
+import { collectHelperClicks, startClickCapture, stopClickCapture } from "./clicks";
+
+export type RecordingResult = {
+  blob: Blob;
+  clicks: Click[];
+};
+
 export type ScreenRecording = {
-  stop: () => void
-  result: Promise<Blob>
-}
+  stop: () => void;
+  result: Promise<RecordingResult>;
+};
 
 function mimeType(): string {
-  if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9")) {
-    return "video/webm;codecs=vp9"
-  }
-  if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8")) {
-    return "video/webm;codecs=vp8"
-  }
-  if (MediaRecorder.isTypeSupported("video/webm")) return "video/webm"
-  return ""
+  const types = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=h264,opus",
+    "video/webm;codecs=h264",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+  ];
+  return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
 }
 
 async function getDisplayStream(): Promise<MediaStream> {
+  const video = {
+    frameRate: { ideal: 60, max: 60 },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  };
   try {
     return await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 30 },
+      video,
       audio: true,
-    })
+    });
   } catch (err) {
-    if (err instanceof DOMException && err.name === "NotAllowedError") throw err
+    if (err instanceof DOMException && err.name === "NotAllowedError") throw err;
     return navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 30 },
+      video,
       audio: false,
-    })
+    });
   }
 }
 
 function stopTracks(stream: MediaStream): void {
-  for (const track of stream.getTracks()) track.stop()
+  for (const track of stream.getTracks()) track.stop();
 }
 
 export async function startRecording(): Promise<ScreenRecording> {
-  const stream = await getDisplayStream()
-
-  const mime = mimeType()
-  const rec = mime
-    ? new MediaRecorder(stream, { mimeType: mime })
-    : new MediaRecorder(stream)
-  const chunks: BlobPart[] = []
-  rec.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data)
+  const stream = await getDisplayStream();
+  const videoTrack = stream.getVideoTracks()[0];
+  const surface = videoTrack?.getSettings().displaySurface ?? "browser";
+  if (videoTrack) {
+    videoTrack.contentHint = "motion";
+    try {
+      await videoTrack.applyConstraints({
+        frameRate: { ideal: 60, max: 60 },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      });
+    } catch {
+      /* keep picker defaults */
+    }
   }
 
-  let settled = false
-  let finish: (() => void) | undefined
+  const t0 = Date.now();
+  startClickCapture(t0);
 
-  const result = new Promise<Blob>((resolve, reject) => {
+  const mime = mimeType();
+  const rec = mime
+    ? new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: 16_000_000,
+        audioBitsPerSecond: 192_000,
+      })
+    : new MediaRecorder(stream, { videoBitsPerSecond: 16_000_000 });
+
+  const chunks: BlobPart[] = [];
+  rec.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  let settled = false;
+  let finish: (() => void) | undefined;
+
+  const result = new Promise<RecordingResult>((resolve, reject) => {
     finish = () => {
-      if (settled) return
-      settled = true
+      if (settled) return;
+      settled = true;
       try {
         if (rec.state === "recording") {
-          rec.requestData()
-          rec.stop()
+          rec.requestData();
+          rec.stop();
         }
       } catch {
         /* already stopped */
       }
-      stopTracks(stream)
+      stopTracks(stream);
       window.setTimeout(() => {
-        resolve(new Blob(chunks, { type: rec.mimeType || "video/webm" }))
-      }, 80)
-    }
+        void collectHelperClicks(surface === "monitor").then((clicks) => {
+          stopClickCapture();
+          resolve({
+            blob: new Blob(chunks, { type: rec.mimeType || "video/webm" }),
+            clicks,
+          });
+        });
+      }, 120);
+    };
 
     rec.onerror = () => {
-      if (settled) return
-      settled = true
-      stopTracks(stream)
-      reject(new Error("Recording failed"))
-    }
-    rec.onstop = () => finish?.()
+      if (settled) return;
+      settled = true;
+      stopTracks(stream);
+      stopClickCapture();
+      reject(new Error("Recording failed"));
+    };
+    rec.onstop = () => finish?.();
     for (const track of stream.getTracks()) {
-      track.addEventListener("ended", () => finish?.())
+      track.addEventListener("ended", () => finish?.());
     }
-  })
+  });
 
-  rec.start(200)
+  rec.start(1000);
 
   return {
     stop: () => finish?.(),
     result,
-  }
+  };
 }

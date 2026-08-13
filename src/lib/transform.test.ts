@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { clicksToZooms } from "./clicks";
 import { sampleTransform } from "./transform";
 import type { Zoom } from "../types";
 
@@ -17,13 +18,26 @@ describe("sampleTransform", () => {
   });
 
   it("holds the zoom during the hold window", () => {
-    const xf = sampleTransform(1.2, [z({ t: 1 })], 10);
+    const xf = sampleTransform(1.2, [z({ t: 1 })], 10, 0.38);
     expect(xf.scale).toBe(2);
     expect(xf.x).toBe(0.2);
   });
 
   it("returns to identity after the ease-out", () => {
-    const xf = sampleTransform(3, [z({ t: 1, hold: 0.5 })], 10);
+    const xf = sampleTransform(3, [z({ t: 1, hold: 0.5 })], 10, 0.38);
     expect(xf.scale).toBe(1);
+  });
+});
+
+describe("clicksToZooms", () => {
+  it("drops clicks that are too close together", () => {
+    const zooms = clicksToZooms([
+      { t: 1, x: 0.2, y: 0.2 },
+      { t: 1.1, x: 0.3, y: 0.3 },
+      { t: 2, x: 0.8, y: 0.8 },
+    ]);
+    expect(zooms).toHaveLength(2);
+    expect(zooms[0]?.t).toBe(1);
+    expect(zooms[1]?.t).toBe(2);
   });
 });

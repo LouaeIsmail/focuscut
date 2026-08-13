@@ -1,20 +1,39 @@
 # Focuscut
 
-Open-source screen recordings with zooms that follow the action.
+[![CI](https://github.com/LouaeIsmail/focuscut/actions/workflows/ci.yml/badge.svg)](https://github.com/LouaeIsmail/focuscut/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Record your screen or drop a video. Click where the viewer should look. Export a WebM from the browser. The file never uploads.
+Open-source screen recordings with zooms that follow the action.
 
 **Use it:** [louaeismail.github.io/focuscut](https://louaeismail.github.io/focuscut)
 
-This is not CapCut. [OpenCut](https://github.com/OpenCut-app/OpenCut) already is. Focuscut is the other job: make a demo that zooms like [Cursorful](https://cursorful.com/) / Screen Studio, locally, for free.
+Record or drop a video. Clicks become zooms. Export locally. Nothing uploads. No account.
 
-## What it does
+This is not a CapCut clone. [OpenCut](https://github.com/OpenCut-app/OpenCut) already is. Focuscut is the Screen Studio / [Cursorful](https://cursorful.com/) job: a demo that follows the click.
 
-- Record the tab or screen from the browser. **End recording** is on the page — you do not have to hunt for Chrome’s Stop sharing bar
-- Or drop an existing video
-- Click the preview to plant a zoom
-- Padding, rounded screen, backgrounds, 16:9 / 9:16 / 1:1
-- Export WebM on-device
+## Features
+
+- Record a tab or screen at up to 60fps, or drop an existing file
+- **End recording** on the page (you do not need the browser’s Stop sharing bar)
+- Auto zooms from clicks via the optional [helper extension](extension/README.md)
+- Manual zooms: click the preview or press `Z`
+- Padding down to 0 (flush, no forced margin)
+- Contain or cover, 16:9 / 9:16 / 1:1 / source
+- 14 backgrounds, custom color, or a background image
+- Corners, border, optional shadow, zoom ease
+- Trim in/out
+- Export 1080p60, 1440p60, or 4K30 WebM on-device
+
+## Click helper
+
+A website cannot see clicks in other windows. To plant zooms automatically while you record:
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. **Load unpacked** → the `extension/` folder in this repo
+4. Reload Focuscut and record again
+
+Without the helper, click the preview after recording to aim zooms.
 
 ## Run locally
 
@@ -23,7 +42,7 @@ npm install
 npm run dev
 ```
 
-Requires a Chromium browser for screen recording (`getDisplayMedia`).
+Chromium is required for screen recording (`getDisplayMedia`).
 
 ## Keyboard
 
@@ -32,12 +51,9 @@ Requires a Chromium browser for screen recording (`getDisplayMedia`).
 | Space | Play / pause |
 | Z | Zoom at the center |
 | Click | Zoom at the cursor |
+| [ / ] | Set trim in / out |
 | ← → | Skip 1s |
 | Delete | Remove selected zoom |
-
-## Why this exists
-
-People already have a video editor. What they still pay Screen Studio and Cursorful for is *focus*: the frame should follow the click. Focuscut is that piece, open source, no account.
 
 ## Contributing
 

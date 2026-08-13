@@ -2,23 +2,26 @@ import { renderFrame, outputSize } from "./draw";
 import { sampleTransform } from "./transform";
 import type { Look, Zoom } from "../types";
 
+type VideoWithFrames = HTMLVideoElement & {
+  requestVideoFrameCallback?: (cb: (now: number) => void) => number;
+  cancelVideoFrameCallback?: (id: number) => void;
+};
+
 function exportMime(): string {
   const types = [
-    "video/webm;codecs=vp9",
+    "video/mp4;codecs=avc1.42E01E",
     "video/webm;codecs=h264",
+    "video/webm;codecs=vp8",
+    "video/webm;codecs=vp9",
     "video/webm",
   ];
   return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? "video/webm";
 }
 
 function bitrate(look: Look): number {
-  if (look.quality === "2160") return 40_000_000;
-  if (look.quality === "1440") return 24_000_000;
-  return 16_000_000;
-}
-
-function fps(look: Look): number {
-  return look.quality === "2160" ? 30 : 60;
+  if (look.quality === "2160") return 20_000_000;
+  if (look.quality === "1440") return 12_000_000;
+  return 8_000_000;
 }
 
 export async function exportVideo(opts: {
@@ -44,8 +47,7 @@ export async function exportVideo(opts: {
   });
   if (!ctx) throw new Error("No 2d context");
 
-  const rate = fps(look);
-  const canvasStream = canvas.captureStream(rate);
+  const canvasStream = canvas.captureStream(30);
   const wasMuted = video.muted;
   video.muted = false;
   let audioTracks: MediaStreamTrack[] = [];
@@ -67,7 +69,7 @@ export async function exportVideo(opts: {
   const rec = new MediaRecorder(mixed, {
     mimeType: mime,
     videoBitsPerSecond: bitrate(look),
-    audioBitsPerSecond: 192_000,
+    audioBitsPerSecond: 128_000,
   });
   rec.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data);
@@ -88,37 +90,46 @@ export async function exportVideo(opts: {
     rec.onstop = finish;
   });
 
+  const v = video as VideoWithFrames;
   video.pause();
   video.playbackRate = 1;
   video.currentTime = trimStart;
   await waitSeek(video);
 
-  rec.start(250);
+  rec.start();
   await video.play();
 
   await new Promise<void>((resolve) => {
     let donePlaying = false;
+    let handle = 0;
     const finishPlay = () => {
       if (donePlaying) return;
       donePlaying = true;
+      if (handle && v.cancelVideoFrameCallback) v.cancelVideoFrameCallback(handle);
       resolve();
     };
-    const tick = () => {
+    const onFrame = () => {
       const t = video.currentTime;
       const xf = sampleTransform(t, zooms, video.duration || trimEnd, look.ease);
       renderFrame(ctx, video, xf, look);
       onProgress?.(span ? Math.min(1, (t - trimStart) / span) : 0);
       const atEnd =
-        video.ended ||
-        video.paused ||
-        t >= trimEnd - 0.04;
+        video.ended || video.paused || t >= trimEnd - 0.04;
       if (atEnd) {
         finishPlay();
         return;
       }
-      requestAnimationFrame(tick);
+      if (v.requestVideoFrameCallback) {
+        handle = v.requestVideoFrameCallback(onFrame);
+      } else {
+        requestAnimationFrame(onFrame);
+      }
     };
-    requestAnimationFrame(tick);
+    if (v.requestVideoFrameCallback) {
+      handle = v.requestVideoFrameCallback(onFrame);
+    } else {
+      requestAnimationFrame(onFrame);
+    }
     video.onended = finishPlay;
     window.setTimeout(finishPlay, Math.ceil(span * 1000) + 2000);
   });

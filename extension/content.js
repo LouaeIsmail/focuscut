@@ -17,7 +17,8 @@ window.addEventListener(
     if (!active || e.button !== 0) return;
     chrome.runtime.sendMessage({
       type: "focuscut-click",
-      t: (Date.now() - t0) / 1000,
+      now: Date.now(),
+      t: t0 ? (Date.now() - t0) / 1000 : undefined,
       x: e.clientX / Math.max(1, window.innerWidth),
       y: e.clientY / Math.max(1, window.innerHeight),
       sx: e.screenX / Math.max(1, window.screen.width),

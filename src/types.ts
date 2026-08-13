@@ -5,6 +5,7 @@ export type Zoom = {
   y: number;
   scale: number;
   hold: number;
+  source?: "auto" | "manual";
 };
 
 export type Click = {
@@ -70,6 +71,6 @@ export const DEFAULT_LOOK: Look = {
   shadow: false,
   fit: "contain",
   border: 0,
-  ease: 0.45,
+  ease: 0.65,
   quality: "1080",
 };

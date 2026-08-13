@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { canvasToVideo, outputSize, renderFrame } from "../lib/draw";
+import { canvasToVideo, previewSize, renderFrame } from "../lib/draw";
 import { exportVideo } from "../lib/exportVideo";
 import { sampleTransform, uid } from "../lib/transform";
 import {
@@ -41,47 +41,95 @@ export function Editor({ src, onReset, seedZooms = [] }: Props) {
   );
   const [exporting, setExporting] = useState<number | null>(null);
   const [speed, setSpeed] = useState(1);
+  const [useAutoZooms, setUseAutoZooms] = useState(true);
   const [look, setLook] = useState<Look>(DEFAULT_LOOK);
 
-  const size = useMemo(
-    () => outputSize(look, videoRef.current),
-    [look, ready, duration],
+  const visibleZooms = useMemo(
+    () => (useAutoZooms ? zooms : zooms.filter((z) => z.source !== "auto")),
+    [zooms, useAutoZooms],
   );
+  const autoCount = zooms.filter((z) => z.source === "auto").length;
+
+  const lookRef = useRef(look);
+  const zoomsRef = useRef(visibleZooms);
+  const trimRef = useRef({ start: trimStart, end: trimEnd });
+  lookRef.current = look;
+  zoomsRef.current = visibleZooms;
+  trimRef.current = { start: trimStart, end: trimEnd };
 
   useEffect(() => {
+    if (!ready) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-    canvas.width = size.w;
-    canvas.height = size.h;
     const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
     if (!ctx) return;
 
+    const v = video as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number;
+      cancelVideoFrameCallback?: (id: number) => void;
+    };
+
     let raf = 0;
+    let rvfc = 0;
     let lastUi = 0;
-    const draw = (ts: number) => {
-      if (trimEnd > trimStart && !video.paused && video.currentTime >= trimEnd) {
+    let stopped = false;
+
+    const draw = () => {
+      const currentLook = lookRef.current;
+      const trim = trimRef.current;
+      if (trim.end > trim.start && !video.paused && video.currentTime >= trim.end) {
         video.pause();
-        video.currentTime = trimEnd;
+        video.currentTime = trim.end;
       }
-      const t = video.currentTime;
+      const rect = canvas.getBoundingClientRect();
+      const dest = previewSize(currentLook, video, rect.width, rect.height);
+      if (canvas.width !== dest.w || canvas.height !== dest.h) {
+        canvas.width = dest.w;
+        canvas.height = dest.h;
+      }
       const xf = sampleTransform(
-        t,
-        zooms,
-        video.duration || duration,
-        look.ease,
+        video.currentTime,
+        zoomsRef.current,
+        video.duration || 0,
+        currentLook.ease,
       );
-      renderFrame(ctx, video, xf, look);
-      if (ts - lastUi > 80) {
+      renderFrame(ctx, video, xf, currentLook, dest);
+    };
+
+    const step = (ts: number) => {
+      if (stopped) return;
+      draw();
+      if (ts - lastUi > 120) {
         lastUi = ts;
-        setNow(t);
+        setNow(video.currentTime);
         setPlaying(!video.paused && !video.ended);
       }
-      raf = requestAnimationFrame(draw);
+      if (!video.paused && !video.ended && v.requestVideoFrameCallback) {
+        rvfc = v.requestVideoFrameCallback(() => step(performance.now()));
+      } else {
+        raf = requestAnimationFrame(step);
+      }
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [look, zooms, duration, size.w, size.h, trimStart, trimEnd]);
+
+    const onPause = () => {
+      if (stopped) return;
+      cancelAnimationFrame(raf);
+      v.cancelVideoFrameCallback?.(rvfc);
+      raf = requestAnimationFrame(step);
+    };
+
+    video.addEventListener("pause", onPause);
+    video.addEventListener("seeked", draw);
+    raf = requestAnimationFrame(step);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+      v.cancelVideoFrameCallback?.(rvfc);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("seeked", draw);
+    };
+  }, [ready]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -121,7 +169,8 @@ export function Editor({ src, onReset, seedZooms = [] }: Props) {
       x,
       y,
       scale: 1.85,
-      hold: 0.55,
+      hold: 0.7,
+      source: "manual",
     };
     setZooms((zs) => [...zs, next].sort((a, b) => a.t - b.t));
     setSelected(next.id);
@@ -144,7 +193,7 @@ export function Editor({ src, onReset, seedZooms = [] }: Props) {
     try {
       const blob = await exportVideo({
         video,
-        zooms,
+        zooms: visibleZooms,
         look,
         trimStart,
         trimEnd: end,
@@ -159,7 +208,7 @@ export function Editor({ src, onReset, seedZooms = [] }: Props) {
     }
   }
 
-  const current = zooms.find((z) => z.id === selected);
+  const current = visibleZooms.find((z) => z.id === selected);
 
   return (
     <div className="editor">
@@ -252,9 +301,9 @@ export function Editor({ src, onReset, seedZooms = [] }: Props) {
               setLook((l) => ({ ...l, quality: e.target.value as Quality }))
             }
           >
-            <option value="1080">1080p 60fps</option>
-            <option value="1440">1440p 60fps</option>
-            <option value="2160">4K 30fps</option>
+            <option value="1080">1080p</option>
+            <option value="1440">1440p</option>
+            <option value="2160">4K</option>
           </select>
         </div>
         <div className="field">
@@ -412,7 +461,17 @@ export function Editor({ src, onReset, seedZooms = [] }: Props) {
         </div>
         <p className="hint">[ sets in · ] sets out at the playhead</p>
 
-        <h2>Zoom {zooms.length ? `(${zooms.length})` : ""}</h2>
+        <h2>Zoom {visibleZooms.length ? `(${visibleZooms.length})` : ""}</h2>
+        {autoCount > 0 ? (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={useAutoZooms}
+              onChange={(e) => setUseAutoZooms(e.target.checked)}
+            />
+            Click zooms ({autoCount})
+          </label>
+        ) : null}
         {current ? (
           <>
             <div className="field">
@@ -487,7 +546,7 @@ export function Editor({ src, onReset, seedZooms = [] }: Props) {
           <span>
             {fmt(now)} / {fmt(duration)}
           </span>
-          <span>{ready ? `${zooms.length} zooms` : "Loading…"}</span>
+          <span>{ready ? `${visibleZooms.length} zooms` : "Loading…"}</span>
           <label className="speed">
             Speed
             <select
@@ -524,11 +583,12 @@ export function Editor({ src, onReset, seedZooms = [] }: Props) {
             className="playhead"
             style={{ left: duration ? `${(now / duration) * 100}%` : 0 }}
           />
-          {zooms.map((z) => (
+          {visibleZooms.map((z) => (
             <button
               key={z.id}
               type="button"
               className="mark"
+              data-auto={z.source === "auto"}
               data-on={z.id === selected}
               style={{ left: duration ? `${(z.t / duration) * 100}%` : 0 }}
               onClick={(e) => {

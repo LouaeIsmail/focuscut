@@ -378,6 +378,10 @@ button {
   outline: 2px solid var(--accent-2);
 }
 
+.mark[data-auto="true"] {
+  background: #f0a36a;
+}
+
 .playhead {
   position: absolute;
   top: 0;

@@ -78,7 +78,7 @@ export function collectClicks(useScreen: boolean): Click[] {
 export async function collectHelperClicks(
   useScreen: boolean,
 ): Promise<Click[]> {
-  const res = await askHelper<Reply>({ type: "focuscut-session-stop" }, 400);
+  const res = await askHelper<Reply>({ type: "focuscut-session-stop" }, 800);
   const extra = res?.clicks ?? [];
   const fromHelper = extra.map((c) => ({
     t: c.t,
@@ -102,7 +102,8 @@ export function clicksToZooms(clicks: Click[], scale = 1.85): Zoom[] {
       x: Math.min(1, Math.max(0, c.x)),
       y: Math.min(1, Math.max(0, c.y)),
       scale,
-      hold: 0.55,
+      hold: 0.7,
+      source: "auto",
     });
   }
   return out;

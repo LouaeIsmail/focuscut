@@ -103,13 +103,35 @@ function paintBackground(
   ctx.fillRect(0, 0, width, height);
 }
 
+export function previewSize(
+  look: Look,
+  video: HTMLVideoElement | null,
+  cssWidth: number,
+  cssHeight: number,
+): { w: number; h: number } {
+  const out = outputSize(look, video);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const maxLong = 1280 * dpr;
+  const fit = Math.min(
+    1,
+    maxLong / Math.max(out.w, out.h),
+    (Math.max(2, cssWidth) * dpr) / out.w,
+    (Math.max(2, cssHeight) * dpr) / out.h,
+  );
+  return {
+    w: Math.max(2, Math.round(out.w * fit)),
+    h: Math.max(2, Math.round(out.h * fit)),
+  };
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
   xf: Transform,
   look: Look,
+  dest?: { w: number; h: number },
 ): void {
-  const { w, h } = outputSize(look, video);
+  const { w, h } = dest ?? outputSize(look, video);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.clearRect(0, 0, w, h);

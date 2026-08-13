@@ -27,6 +27,15 @@ describe("sampleTransform", () => {
     const xf = sampleTransform(3, [z({ t: 1, hold: 0.5 })], 10, 0.38);
     expect(xf.scale).toBe(1);
   });
+
+  it("pans between clicks instead of zooming out to 1x", () => {
+    const a = z({ id: "a", t: 1, x: 0.2, y: 0.2, scale: 2, hold: 0.4 });
+    const b = z({ id: "b", t: 2, x: 0.8, y: 0.8, scale: 2, hold: 0.4 });
+    const mid = sampleTransform(1.8, [a, b], 10, 0.5);
+    expect(mid.scale).toBeGreaterThan(1.5);
+    expect(mid.x).toBeGreaterThan(0.2);
+    expect(mid.x).toBeLessThan(0.8);
+  });
 });
 
 describe("clicksToZooms", () => {

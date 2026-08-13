@@ -13,11 +13,11 @@ export type ScreenRecording = {
 
 function mimeType(): string {
   const types = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp9",
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
     "video/webm;codecs=h264,opus",
     "video/webm;codecs=h264",
     "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp9,opus",
     "video/webm",
   ];
   return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
@@ -25,9 +25,8 @@ function mimeType(): string {
 
 async function getDisplayStream(): Promise<MediaStream> {
   const video = {
-    frameRate: { ideal: 60, max: 60 },
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
+    frameRate: { ideal: 30, max: 30 },
+    cursor: "always" as const,
   };
   try {
     return await navigator.mediaDevices.getDisplayMedia({
@@ -51,18 +50,7 @@ export async function startRecording(): Promise<ScreenRecording> {
   const stream = await getDisplayStream();
   const videoTrack = stream.getVideoTracks()[0];
   const surface = videoTrack?.getSettings().displaySurface ?? "browser";
-  if (videoTrack) {
-    videoTrack.contentHint = "motion";
-    try {
-      await videoTrack.applyConstraints({
-        frameRate: { ideal: 60, max: 60 },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      });
-    } catch {
-      /* keep picker defaults */
-    }
-  }
+  if (videoTrack) videoTrack.contentHint = "motion";
 
   const t0 = Date.now();
   startClickCapture(t0);
@@ -71,10 +59,10 @@ export async function startRecording(): Promise<ScreenRecording> {
   const rec = mime
     ? new MediaRecorder(stream, {
         mimeType: mime,
-        videoBitsPerSecond: 16_000_000,
-        audioBitsPerSecond: 192_000,
+        videoBitsPerSecond: 8_000_000,
+        audioBitsPerSecond: 128_000,
       })
-    : new MediaRecorder(stream, { videoBitsPerSecond: 16_000_000 });
+    : new MediaRecorder(stream, { videoBitsPerSecond: 8_000_000 });
 
   const chunks: BlobPart[] = [];
   rec.ondataavailable = (e) => {
@@ -121,7 +109,7 @@ export async function startRecording(): Promise<ScreenRecording> {
     }
   });
 
-  rec.start(1000);
+  rec.start();
 
   return {
     stop: () => finish?.(),

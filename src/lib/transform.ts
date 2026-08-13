@@ -4,9 +4,10 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
-function smootherstep(t: number): number {
+/** Quintic ease-in-out. Softer than smoothstep at the ends. */
+function easeInOut(t: number): number {
   const x = clamp(t, 0, 1);
-  return x * x * x * (x * (x * 6 - 15) + 10);
+  return x < 0.5 ? 16 * x * x * x * x * x : 1 - (-2 * x + 2) ** 5 / 2;
 }
 
 function lerp(a: number, b: number, t: number): number {
@@ -14,7 +15,7 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 function lerpXf(a: Transform, b: Transform, t: number): Transform {
-  const e = smootherstep(t);
+  const e = easeInOut(t);
   return {
     x: lerp(a.x, b.x, e),
     y: lerp(a.y, b.y, e),
@@ -24,56 +25,51 @@ function lerpXf(a: Transform, b: Transform, t: number): Transform {
 
 const IDENTITY: Transform = { x: 0.5, y: 0.5, scale: 1 };
 
-function windowOf(
-  z: Zoom,
-  ease: number,
-): { start: number; holdEnd: number; end: number } {
-  return {
-    start: z.t - ease,
-    holdEnd: z.t + z.hold,
-    end: z.t + z.hold + ease,
-  };
-}
-
 function zoomXf(z: Zoom): Transform {
   return { x: z.x, y: z.y, scale: z.scale };
 }
 
-/** Sample the zoom transform at time t (seconds). */
+/**
+ * Camera path: ease in, pan between clicks, ease out after the last one.
+ * Does not zoom back to 1x between clicks.
+ */
 export function sampleTransform(
   t: number,
   zooms: Zoom[],
   duration: number,
-  ease = 0.45,
+  ease = 0.65,
 ): Transform {
   if (zooms.length === 0 || duration <= 0) return IDENTITY;
 
-  const sorted = zooms.slice().sort((a, b) => a.t - b.t);
-  const active: { z: Zoom; start: number; holdEnd: number; end: number }[] = [];
-  for (const z of sorted) {
-    const w = windowOf(z, ease);
-    if (t >= w.start && t <= w.end) active.push({ z, ...w });
-  }
-
-  if (active.length === 0) return IDENTITY;
-  if (active.length === 1) {
-    const a = active[0];
-    if (!a) return IDENTITY;
-    if (t < a.z.t) {
-      const u = (t - a.start) / Math.max(0.0001, a.z.t - a.start);
-      return lerpXf(IDENTITY, zoomXf(a.z), u);
-    }
-    if (t <= a.holdEnd) return zoomXf(a.z);
-    const u = (t - a.holdEnd) / Math.max(0.0001, a.end - a.holdEnd);
-    return lerpXf(zoomXf(a.z), IDENTITY, u);
-  }
-
-  const first = active[0];
-  const last = active[active.length - 1];
+  const zs = zooms.slice().sort((a, b) => a.t - b.t);
+  const first = zs[0];
+  const last = zs[zs.length - 1];
   if (!first || !last) return IDENTITY;
-  const span = last.holdEnd - first.z.t;
-  const u = span <= 0 ? 1 : (t - first.z.t) / span;
-  return lerpXf(zoomXf(first.z), zoomXf(last.z), u);
+
+  const travel = Math.max(0.18, ease);
+
+  if (t <= first.t - travel) return IDENTITY;
+  if (t < first.t) {
+    return lerpXf(IDENTITY, zoomXf(first), (t - (first.t - travel)) / travel);
+  }
+
+  for (let i = 0; i < zs.length - 1; i++) {
+    const cur = zs[i];
+    const next = zs[i + 1];
+    if (!cur || !next) continue;
+    const start = Math.max(cur.t, next.t - travel);
+    if (t < start) return zoomXf(cur);
+    if (t < next.t) {
+      const span = Math.max(0.0001, next.t - start);
+      return lerpXf(zoomXf(cur), zoomXf(next), (t - start) / span);
+    }
+  }
+
+  const holdEnd = last.t + last.hold;
+  if (t <= holdEnd) return zoomXf(last);
+  const exitEnd = holdEnd + travel;
+  if (t < exitEnd) return lerpXf(zoomXf(last), IDENTITY, (t - holdEnd) / travel);
+  return IDENTITY;
 }
 
 export function uid(): string {

@@ -11,4 +11,6 @@ The website cannot see clicks on other windows by itself. This helper is how Cur
 3. **Load unpacked** and pick this `extension` folder
 4. Reload Focuscut and record again
 
+If you already loaded it, click **Reload** on the extension card after pulling, then refresh every tab you will click in.
+
 No account. No upload. Clicks stay in memory until the recording ends.

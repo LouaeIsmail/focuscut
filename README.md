@@ -10,7 +10,7 @@ This is not CapCut. [OpenCut](https://github.com/OpenCut-app/OpenCut) already is
 
 ## What it does
 
-- Record the tab or screen from the browser
+- Record the tab or screen from the browser. **End recording** is on the page — you do not have to hunt for Chrome’s Stop sharing bar
 - Or drop an existing video
 - Click the preview to plant a zoom
 - Padding, rounded screen, backgrounds, 16:9 / 9:16 / 1:1

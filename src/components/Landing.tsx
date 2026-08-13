@@ -1,19 +1,43 @@
-import { useRef } from "react";
+import { useRef } from "react"
 
 type Props = {
-  onFile: (file: File) => void;
-  onRecord: () => void;
-};
+  onFile: (file: File) => void
+  onRecord: () => void
+  onStop: () => void
+  recording: boolean
+  elapsed: number
+  error: string | null
+}
 
-export function Landing({ onFile, onRecord }: Props) {
-  const input = useRef<HTMLInputElement>(null);
+function clock(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${String(s).padStart(2, "0")}`
+}
+
+export function Landing({
+  onFile,
+  onRecord,
+  onStop,
+  recording,
+  elapsed,
+  error,
+}: Props) {
+  const input = useRef<HTMLInputElement>(null)
 
   return (
     <div className="landing">
       <header className="nav">
         <div className="brand">
           <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-            <circle cx="16" cy="16" r="9" fill="none" stroke="#ff5c33" strokeWidth="2" />
+            <circle
+              cx="16"
+              cy="16"
+              r="9"
+              fill="none"
+              stroke="#ff5c33"
+              strokeWidth="2"
+            />
             <circle cx="16" cy="16" r="3" fill="#ff5c33" />
           </svg>
           Focuscut
@@ -28,28 +52,54 @@ export function Landing({ onFile, onRecord }: Props) {
             Record your screen or drop a video. Click where the viewer should
             look. Export a polished demo from your browser.
           </p>
-          <div className="actions">
-            <button type="button" className="btn btn-primary" onClick={onRecord}>
-              Record screen
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => input.current?.click()}
-            >
-              Drop a video
-            </button>
-            <input
-              ref={input}
-              className="hidden-input"
-              type="file"
-              accept="video/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onFile(file);
-              }}
-            />
-          </div>
+          {recording ? (
+            <div className="rec-panel">
+              <div className="rec-row">
+                <span className="rec-dot" aria-hidden="true" />
+                <span className="rec-time">{clock(elapsed)}</span>
+                Recording
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-lg"
+                onClick={onStop}
+              >
+                End recording
+              </button>
+              <p className="hint">
+                Come back to this tab and hit End. You can also use Stop
+                sharing in the browser bar.
+              </p>
+            </div>
+          ) : (
+            <div className="actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={onRecord}
+              >
+                Record screen
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => input.current?.click()}
+              >
+                Drop a video
+              </button>
+              <input
+                ref={input}
+                className="hidden-input"
+                type="file"
+                accept="video/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) onFile(file)
+                }}
+              />
+            </div>
+          )}
+          {error ? <p className="error">{error}</p> : null}
         </div>
       </main>
       <footer className="foot">
@@ -57,5 +107,5 @@ export function Landing({ onFile, onRecord }: Props) {
         <span>Space play · Z add zoom · click video to aim</span>
       </footer>
     </div>
-  );
+  )
 }

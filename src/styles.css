@@ -118,6 +118,54 @@ button {
   cursor: default;
 }
 
+.btn-lg {
+  padding: 16px 28px;
+  font-size: 16px;
+  min-width: 220px;
+}
+
+.rec-panel {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+}
+
+.rec-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 14px;
+}
+
+.rec-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(255, 92, 51, 0.6);
+  animation: recpulse 1.2s ease-out infinite;
+}
+
+@keyframes recpulse {
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 92, 51, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 92, 51, 0);
+  }
+}
+
+.error {
+  margin: 16px 0 0;
+  color: #ff8a70;
+  font-size: 14px;
+}
+
 .hidden-input {
   display: none;
 }

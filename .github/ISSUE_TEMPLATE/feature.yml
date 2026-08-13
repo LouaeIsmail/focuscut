@@ -1,0 +1,18 @@
+name: Feature
+description: A new editor, record, or export capability
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: Who hits this while making a demo.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How it should work
+    validations:
+      required: true
